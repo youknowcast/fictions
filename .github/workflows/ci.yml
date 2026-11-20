@@ -16,6 +16,9 @@ jobs:
 
       - uses: jdx/mise-action@v2
 
+      - name: Install rust components
+        run: rustup component add rustfmt clippy
+
       - name: Install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 

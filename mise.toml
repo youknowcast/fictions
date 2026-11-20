@@ -1,2 +1,2 @@
 [tools]
-rust = "1.99"
+rust = { version = "1.99", components = ["rustfmt", "clippy"] }
