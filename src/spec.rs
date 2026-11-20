@@ -178,7 +178,12 @@ mod tests {
                 height: h,
                 sar_num: 1,
                 sar_den: 1,
-                pix_fmt: if depth == 10 { "yuv420p10le" } else { "yuv420p" }.into(),
+                pix_fmt: if depth == 10 {
+                    "yuv420p10le"
+                } else {
+                    "yuv420p"
+                }
+                .into(),
                 bit_depth: depth,
                 interlaced: false,
                 rotation: None,
@@ -294,7 +299,9 @@ mod tests {
             video: only_audio.video.clone(),
             audio: None,
         };
-        let spec = decide(&[only_audio, silent], &enc_with_x265()).unwrap().spec;
+        let spec = decide(&[only_audio, silent], &enc_with_x265())
+            .unwrap()
+            .spec;
         assert_eq!(spec.audio.unwrap().channels, 6);
     }
 

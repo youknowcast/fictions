@@ -79,14 +79,19 @@ pub fn run(input: &Path, opts: &Options) -> anyhow::Result<Outcome> {
     };
     let output = dir.join(naming::output_filename(&group.base, &group.hash8, ext));
 
-    if output.exists() && !opts.force {
-        return Ok(Outcome::Skipped(output));
-    }
-
     let expected_duration = total_duration(&infos)?;
 
     if opts.dry_run {
-        return Ok(Outcome::DryRun(describe(&group, &spec, &output, expected_duration)));
+        return Ok(Outcome::DryRun(describe(
+            &group,
+            &spec,
+            &output,
+            expected_duration,
+        )));
+    }
+
+    if output.exists() && !opts.force {
+        return Ok(Outcome::Skipped(output));
     }
 
     let staged = temp.path().join(format!("staged.{ext}"));
@@ -145,10 +150,7 @@ fn total_duration(infos: &[MediaInfo]) -> anyhow::Result<f64> {
 
 fn describe(group: &Group, spec: &OutputSpec, output: &Path, duration: f64) -> String {
     let video = match &spec.video {
-        Some(v) => format!(
-            "{:?} {}x{} crf{}",
-            v.codec, v.width, v.height, v.crf
-        ),
+        Some(v) => format!("{:?} {}x{} crf{}", v.codec, v.width, v.height, v.crf),
         None => "audio only".to_string(),
     };
     let audio = match &spec.audio {
@@ -174,5 +176,16 @@ pub fn exit_code(outcome: &Outcome) -> u8 {
     match outcome {
         Outcome::Suspect(_, _) => 1,
         _ => 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quiet_suppresses_warnings() {
+        assert_eq!(warning_line("warn", true), None);
+        assert!(warning_line("warn", false).is_some());
     }
 }

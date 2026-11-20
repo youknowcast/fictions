@@ -190,3 +190,26 @@ fn truncated_input_is_suspect() {
     let outcome = pipeline::run(&path, &opts()).unwrap();
     assert!(matches!(outcome, Outcome::Suspect(_, _)), "got {outcome:?}");
 }
+
+#[test]
+fn dry_run_reports_even_when_output_exists() {
+    if !common::ffmpeg_ok() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    common::make_video(dir.path(), "again.mp4", 320, 240, 1.0);
+
+    let first = pipeline::run(&dir.path().join("again.mp4"), &opts()).unwrap();
+    assert!(matches!(first, Outcome::Written(_)));
+
+    let second = pipeline::run(
+        &dir.path().join("again.mp4"),
+        &Options {
+            dry_run: true,
+            ..opts()
+        },
+    )
+    .unwrap();
+
+    assert!(matches!(second, Outcome::DryRun(_)), "got {second:?}");
+}

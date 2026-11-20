@@ -208,7 +208,11 @@ mod tests {
         spec
     }
 
-    fn req_single<'a>(spec: &'a OutputSpec, inputs: &'a [PathBuf], output: &'a Path) -> Request<'a> {
+    fn req_single<'a>(
+        spec: &'a OutputSpec,
+        inputs: &'a [PathBuf],
+        output: &'a Path,
+    ) -> Request<'a> {
         Request {
             inputs,
             spec,
@@ -236,7 +240,9 @@ mod tests {
     #[test]
     fn strips_metadata_and_attachments() {
         let args = args_for(&spec_1080());
-        assert!(args.windows(2).any(|w| w[0] == "-map_metadata" && w[1] == "-1"));
+        assert!(args
+            .windows(2)
+            .any(|w| w[0] == "-map_metadata" && w[1] == "-1"));
         assert!(args.contains(&"-map_chapters".to_string()));
         assert!(args.contains(&"-sn".to_string()));
         assert!(args.contains(&"-dn".to_string()));
@@ -247,8 +253,12 @@ mod tests {
         let args = args_for(&spec_1080());
         assert!(args.windows(2).any(|w| w[0] == "-c:v" && w[1] == "libx264"));
         assert!(args.windows(2).any(|w| w[0] == "-crf" && w[1] == "21"));
-        assert!(args.windows(2).any(|w| w[0] == "-pix_fmt" && w[1] == "yuv420p"));
-        assert!(args.windows(2).any(|w| w[0] == "-movflags" && w[1] == "+faststart"));
+        assert!(args
+            .windows(2)
+            .any(|w| w[0] == "-pix_fmt" && w[1] == "yuv420p"));
+        assert!(args
+            .windows(2)
+            .any(|w| w[0] == "-movflags" && w[1] == "+faststart"));
     }
 
     #[test]
@@ -283,11 +293,7 @@ mod tests {
         let spec = spec_1080();
         let mut req = req_single(&spec, &inputs, &output);
         req.interlaced = true;
-        let vf = build_args(&req)
-            .windows(2)
-            .find(|w| w[0] == "-vf")
-            .unwrap()[1]
-            .clone();
+        let vf = build_args(&req).windows(2).find(|w| w[0] == "-vf").unwrap()[1].clone();
         assert!(vf.contains("yadif"));
     }
 
@@ -318,7 +324,9 @@ mod tests {
         let mut req = req_single(&spec, &inputs, &output);
         req.progress = true;
         let args = build_args(&req);
-        assert!(args.windows(2).any(|w| w[0] == "-progress" && w[1] == "pipe:1"));
+        assert!(args
+            .windows(2)
+            .any(|w| w[0] == "-progress" && w[1] == "pipe:1"));
     }
 
     #[test]

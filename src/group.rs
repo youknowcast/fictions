@@ -100,7 +100,8 @@ pub fn detect_group(input: &Path) -> anyhow::Result<Group> {
             }
         };
         let Some(order) = order else { continue };
-        let bytes = std::fs::read(&path).with_context(|| format!("cannot read {}", path.display()))?;
+        let bytes =
+            std::fs::read(&path).with_context(|| format!("cannot read {}", path.display()))?;
         parts.push(Part {
             path,
             order,

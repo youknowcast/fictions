@@ -29,6 +29,9 @@ mod tests {
 
     #[test]
     fn builds_name_with_hash() {
-        assert_eq!(output_filename("hello", "deadbeef", "mp4"), "hello-deadbeef.mp4");
+        assert_eq!(
+            output_filename("hello", "deadbeef", "mp4"),
+            "hello-deadbeef.mp4"
+        );
     }
 }

@@ -47,9 +47,7 @@ pub fn macos_profile(readable: &[PathBuf], writable: &Path) -> String {
     profile.push_str(
         "(allow file-read* (subpath \"/usr\") (subpath \"/System\") (subpath \"/Library\")\n",
     );
-    profile.push_str(
-        "                  (subpath \"/opt/homebrew\") (subpath \"/usr/local\")\n",
-    );
+    profile.push_str("                  (subpath \"/opt/homebrew\") (subpath \"/usr/local\")\n");
     profile.push_str("                  (subpath \"/private/tmp\") (subpath \"/private/var/tmp\")");
     for path in readable {
         profile.push_str(&format!(

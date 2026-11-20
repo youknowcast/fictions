@@ -3,7 +3,11 @@ use std::path::PathBuf;
 use clap::Parser;
 
 #[derive(Debug, Clone, Parser)]
-#[command(name = "fictions", version, about = "Normalize downloaded media for local playback")]
+#[command(
+    name = "fictions",
+    version,
+    about = "Normalize downloaded media for local playback"
+)]
 pub struct Cli {
     pub input: PathBuf,
     #[arg(long)]

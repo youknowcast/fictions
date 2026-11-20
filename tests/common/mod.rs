@@ -19,8 +19,17 @@ pub fn make_video_with(dir: &Path, name: &str, w: u32, h: u32, secs: f32, freq: 
         .arg(format!("testsrc2=size={w}x{h}:rate=30:duration={secs}"))
         .args(["-f", "lavfi", "-i"])
         .arg(format!("sine=frequency={freq}:duration={secs}"))
-        .args(["-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest",
-         "-movflags", "+faststart"])
+        .args([
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-shortest",
+            "-movflags",
+            "+faststart",
+        ])
         .arg(dir.join(name))
         .output()
         .unwrap();

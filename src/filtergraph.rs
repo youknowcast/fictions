@@ -175,11 +175,7 @@ mod tests {
 
     #[test]
     fn missing_audio_is_filled_with_silence() {
-        let g = build(
-            &[info_v(1920, 1080, true), info_no_audio()],
-            &spec_1080(),
-        )
-        .unwrap();
+        let g = build(&[info_v(1920, 1080, true), info_no_audio()], &spec_1080()).unwrap();
         assert!(g.contains("anullsrc=r=48000:cl=stereo,atrim=duration=2"));
     }
 

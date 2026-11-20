@@ -9,14 +9,22 @@ use crate::spec::OutputSpec;
 
 const DURATION_TOLERANCE_SECS: f64 = 1.0;
 
-pub fn check_media(info: &MediaInfo, spec: &OutputSpec, expected_duration: f64) -> anyhow::Result<()> {
+pub fn check_media(
+    info: &MediaInfo,
+    spec: &OutputSpec,
+    expected_duration: f64,
+) -> anyhow::Result<()> {
     if let Some(want) = &spec.video {
         let got = info
             .video
             .as_ref()
             .ok_or_else(|| anyhow!("output has no video stream"))?;
         if got.pix_fmt != want.pix_fmt {
-            bail!("output pixel format is {} (expected {})", got.pix_fmt, want.pix_fmt);
+            bail!(
+                "output pixel format is {} (expected {})",
+                got.pix_fmt,
+                want.pix_fmt
+            );
         }
         if got.width != want.width || got.height != want.height {
             bail!(
@@ -28,10 +36,18 @@ pub fn check_media(info: &MediaInfo, spec: &OutputSpec, expected_duration: f64) 
             );
         }
         if got.width % 2 != 0 || got.height % 2 != 0 {
-            bail!("output dimensions are not even: {}x{}", got.width, got.height);
+            bail!(
+                "output dimensions are not even: {}x{}",
+                got.width,
+                got.height
+            );
         }
         if got.sar_num != got.sar_den {
-            bail!("output sample aspect ratio is {}:{}", got.sar_num, got.sar_den);
+            bail!(
+                "output sample aspect ratio is {}:{}",
+                got.sar_num,
+                got.sar_den
+            );
         }
     }
     if spec.audio.is_some() && info.audio.is_none() {
@@ -42,9 +58,7 @@ pub fn check_media(info: &MediaInfo, spec: &OutputSpec, expected_duration: f64) 
         .duration
         .ok_or_else(|| anyhow!("output has no duration"))?;
     if (duration - expected_duration).abs() > DURATION_TOLERANCE_SECS {
-        bail!(
-            "output duration is {duration:.2}s (expected {expected_duration:.2}s)"
-        );
+        bail!("output duration is {duration:.2}s (expected {expected_duration:.2}s)");
     }
     Ok(())
 }

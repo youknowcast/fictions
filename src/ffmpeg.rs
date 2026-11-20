@@ -153,8 +153,8 @@ impl Ffmpeg {
 
     fn probe_capabilities(&self) -> anyhow::Result<Capabilities> {
         let version = run_capture(&self.ffmpeg, &["-hide_banner", "-version"])?;
-        let (major, minor) = parse_version(&version)
-            .ok_or_else(|| anyhow!("cannot parse ffmpeg version output"))?;
+        let (major, minor) =
+            parse_version(&version).ok_or_else(|| anyhow!("cannot parse ffmpeg version output"))?;
         let encoders = run_capture(&self.ffmpeg, &["-hide_banner", "-encoders"])?;
         let filters = run_capture(&self.ffmpeg, &["-hide_banner", "-filters"])?;
         Ok(Capabilities {
@@ -171,9 +171,7 @@ impl Ffmpeg {
 }
 
 fn has_token(haystack: &str, needle: &str) -> bool {
-    haystack
-        .split_whitespace()
-        .any(|token| token == needle)
+    haystack.split_whitespace().any(|token| token == needle)
 }
 
 fn run_capture(program: &Path, args: &[&str]) -> anyhow::Result<String> {
