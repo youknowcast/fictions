@@ -19,6 +19,7 @@ pub struct VideoInfo {
     pub interlaced: bool,
     pub rotation: Option<f64>,
     pub hdr: bool,
+    pub fps: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -113,6 +114,11 @@ fn parse_video(stream: &Value) -> anyhow::Result<VideoInfo> {
     let primaries = stream["color_primaries"].as_str().unwrap_or("");
     let hdr = matches!(transfer, "smpte2084" | "arib-std-b67") || primaries == "bt2020";
 
+    let fps = stream["avg_frame_rate"]
+        .as_str()
+        .or_else(|| stream["r_frame_rate"].as_str())
+        .and_then(parse_rate);
+
     Ok(VideoInfo {
         width,
         height,
@@ -123,7 +129,18 @@ fn parse_video(stream: &Value) -> anyhow::Result<VideoInfo> {
         interlaced,
         rotation,
         hdr,
+        fps,
     })
+}
+
+fn parse_rate(spec: &str) -> Option<f64> {
+    let (n, d) = spec.split_once('/')?;
+    let n: f64 = n.parse().ok()?;
+    let d: f64 = d.parse().ok()?;
+    if n <= 0.0 || d <= 0.0 {
+        return None;
+    }
+    Some(n / d)
 }
 
 fn parse_audio(stream: &Value) -> anyhow::Result<AudioInfo> {
@@ -148,6 +165,7 @@ mod tests {
         assert_eq!((v.width, v.height), (1920, 1080));
         assert_eq!((v.sar_num, v.sar_den), (1, 1));
         assert!(!v.hdr);
+        assert_eq!(v.fps, Some(30.0));
         assert_eq!(m.audio.unwrap().channels, 2);
     }
 
