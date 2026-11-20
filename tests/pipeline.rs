@@ -71,10 +71,11 @@ fn dry_run_writes_nothing() {
     )
     .unwrap();
 
-    let Outcome::DryRun(text) = outcome else {
+    let Outcome::DryRun(path, text) = outcome else {
         panic!("expected DryRun, got {outcome:?}");
     };
     assert!(text.contains("output:"));
+    assert!(!path.exists());
     assert_eq!(files(dir.path()).len(), before.len());
 }
 
@@ -211,5 +212,5 @@ fn dry_run_reports_even_when_output_exists() {
     )
     .unwrap();
 
-    assert!(matches!(second, Outcome::DryRun(_)), "got {second:?}");
+    assert!(matches!(second, Outcome::DryRun(_, _)), "got {second:?}");
 }

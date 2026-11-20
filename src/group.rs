@@ -28,6 +28,13 @@ pub fn strip_index(stem: &str) -> Option<(&str, u32)> {
     Some((head, body.parse().ok()?))
 }
 
+pub fn parent_dir(path: &Path) -> PathBuf {
+    match path.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir.to_path_buf(),
+        _ => PathBuf::from("."),
+    }
+}
+
 pub fn single(input: &Path) -> anyhow::Result<Group> {
     if !input.is_file() {
         return Err(anyhow!("input is not a file: {}", input.display()));
@@ -73,7 +80,7 @@ pub fn detect_group(input: &Path) -> anyhow::Result<Group> {
         .file_stem()
         .and_then(|s| s.to_str())
         .ok_or_else(|| anyhow!("input has no usable file name: {}", input.display()))?;
-    let dir = input.parent().unwrap_or_else(|| Path::new("."));
+    let dir = parent_dir(input);
 
     let base = match strip_index(stem) {
         Some((candidate, _)) if dir.join(format!("{candidate}.{ext}")).is_file() => {
@@ -83,7 +90,9 @@ pub fn detect_group(input: &Path) -> anyhow::Result<Group> {
     };
 
     let mut parts = Vec::new();
-    for entry in std::fs::read_dir(dir).with_context(|| format!("cannot read {}", dir.display()))? {
+    for entry in
+        std::fs::read_dir(&dir).with_context(|| format!("cannot read {}", dir.display()))?
+    {
         let path = entry?.path();
         if !path.is_file() || path.extension().and_then(|e| e.to_str()) != Some(ext.as_str()) {
             continue;

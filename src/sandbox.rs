@@ -60,6 +60,10 @@ pub fn macos_profile(readable: &[PathBuf], writable: &Path) -> String {
         "(allow file-write* (subpath \"{}\"))\n",
         escape(&writable.to_string_lossy())
     ));
+    profile.push_str(&format!(
+        "(allow file-read* (subpath \"{}\"))\n",
+        escape(&writable.to_string_lossy())
+    ));
     profile.push_str("(allow sysctl-read)\n(deny network*)\n");
     profile
 }
@@ -116,6 +120,12 @@ mod tests {
         assert!(p.contains("(literal \"/tmp/a.mp4\")"));
         assert!(p.contains("(subpath \"/tmp/out\")"));
         assert!(p.contains("(subpath \"/opt/homebrew\")"));
+    }
+
+    #[test]
+    fn profile_lets_verification_read_the_staged_output() {
+        let p = macos_profile(&[PathBuf::from("/tmp/a.mp4")], Path::new("/tmp/out"));
+        assert!(p.contains("(allow file-read* (subpath \"/tmp/out\"))"));
     }
 
     #[test]

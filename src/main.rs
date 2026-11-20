@@ -19,8 +19,8 @@ fn main() -> ExitCode {
 
     match pipeline::run(&cli.input, &options) {
         Ok(outcome) => {
-            if let Outcome::DryRun(text) = &outcome {
-                println!("{text}");
+            if let Outcome::DryRun(_, text) = &outcome {
+                eprintln!("{text}");
             }
             if let Some(path) = pipeline::output_path(&outcome) {
                 if let Outcome::Skipped(_) = outcome {

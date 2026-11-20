@@ -1,6 +1,6 @@
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
+use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context};
 
@@ -124,51 +124,69 @@ pub fn build_args(req: &Request) -> Vec<String> {
 pub fn run(ff: &Ffmpeg, sb: &Sandbox, req: &Request) -> anyhow::Result<EncodeOutcome> {
     let args = build_args(req);
     let mut cmd = sb.wrap(&ff.ffmpeg);
-    cmd.args(&args)
-        .stdin(Stdio::null())
-        .stdout(if req.progress {
+    cmd.args(&args);
+    run_command(cmd, req.progress, req.duration)
+}
+
+fn run_command(
+    mut cmd: Command,
+    progress: bool,
+    duration: Option<f64>,
+) -> anyhow::Result<EncodeOutcome> {
+    cmd.stdin(Stdio::null())
+        .stdout(if progress {
             Stdio::piped()
         } else {
             Stdio::null()
         })
         .stderr(Stdio::piped());
 
-    let mut child = cmd
-        .spawn()
-        .with_context(|| format!("cannot run {}", ff.ffmpeg.display()))?;
+    let mut child = cmd.spawn().context("cannot start ffmpeg")?;
+
+    let stderr_reader = child.stderr.take().map(|mut pipe| {
+        std::thread::spawn(move || {
+            let mut text = String::new();
+            let _ = pipe.read_to_string(&mut text);
+            text
+        })
+    });
 
     if let Some(stdout) = child.stdout.take() {
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
             if let Some(us) = line.strip_prefix("out_time_us=") {
                 if let Ok(us) = us.trim().parse::<i64>() {
-                    if let Some(pct) = percent_from(req, us) {
+                    if let Some(pct) = percent(duration, us) {
                         eprint!("\r{pct:>5.1}%");
                     }
                 }
             }
         }
-        if req.progress {
+        if progress {
             eprintln!();
         }
     }
 
-    let mut stderr = String::new();
-    if let Some(mut pipe) = child.stderr.take() {
-        pipe.read_to_string(&mut stderr)?;
-    }
     let status = child.wait()?;
+    let stderr = stderr_reader
+        .and_then(|handle| handle.join().ok())
+        .unwrap_or_default();
+
     if !status.success() {
         bail!("ffmpeg failed: {}", stderr.trim());
     }
     Ok(EncodeOutcome { stderr })
 }
 
-pub fn percent_from(req: &Request, out_time_us: i64) -> Option<f64> {
-    let total = req.duration?;
+fn percent(duration: Option<f64>, out_time_us: i64) -> Option<f64> {
+    let total = duration?;
     if total <= 0.0 {
         return None;
     }
     Some((out_time_us as f64 / 1_000_000.0 / total * 100.0).clamp(0.0, 100.0))
+}
+
+pub fn percent_from(req: &Request, out_time_us: i64) -> Option<f64> {
+    percent(req.duration, out_time_us)
 }
 
 #[cfg(test)]
@@ -343,6 +361,19 @@ mod tests {
         assert!(args.windows(2).any(|w| w[0] == "-map" && w[1] == "[outv]"));
         assert!(args.windows(2).any(|w| w[0] == "-map" && w[1] == "[outa]"));
         assert!(!args.contains(&"-vf".to_string()));
+    }
+
+    #[test]
+    fn drains_large_stderr_without_deadlock() {
+        let mut cmd = Command::new("/bin/sh");
+        cmd.args([
+            "-c",
+            "i=0; while [ $i -lt 4000 ]; do echo line-of-error-text-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx >&2; i=$((i+1)); done; echo out_time_us=1",
+        ]);
+
+        let outcome = run_command(cmd, true, Some(1.0)).unwrap();
+
+        assert!(outcome.stderr.len() > 100_000, "{}", outcome.stderr.len());
     }
 
     #[test]

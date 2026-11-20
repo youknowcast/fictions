@@ -27,11 +27,26 @@ pub fn build(infos: &[MediaInfo], spec: &OutputSpec) -> Result<String> {
 
     for (i, info) in infos.iter().enumerate() {
         if let Some(video) = &spec.video {
-            let mut filter = format!(
-                "[{i}:v]scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1",
+            let source = info.video.as_ref();
+            let mut filter = format!("[{i}:v]");
+            let larger = source
+                .map(|v| v.width > video.width || v.height > video.height)
+                .unwrap_or(false);
+            if larger {
+                filter.push_str(&format!(
+                    "scale={w}:{h}:force_original_aspect_ratio=decrease,",
+                    w = video.width,
+                    h = video.height
+                ));
+            }
+            if source.map(|v| v.interlaced).unwrap_or(false) {
+                filter.push_str("yadif,");
+            }
+            filter.push_str(&format!(
+                "pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1",
                 w = video.width,
                 h = video.height
-            );
+            ));
             if let Some(fps) = video.fps {
                 filter.push_str(&format!(",fps={fps}"));
             }
@@ -82,6 +97,9 @@ pub fn build(infos: &[MediaInfo], spec: &OutputSpec) -> Result<String> {
 fn layout_name(channels: u32) -> &'static str {
     match channels {
         1 => "mono",
+        3 => "3.0",
+        4 => "quad",
+        5 => "5.0",
         6 => "5.1",
         _ => "stereo",
     }
@@ -177,6 +195,43 @@ mod tests {
     fn missing_audio_is_filled_with_silence() {
         let g = build(&[info_v(1920, 1080, true), info_no_audio()], &spec_1080()).unwrap();
         assert!(g.contains("anullsrc=r=48000:cl=stereo,atrim=duration=2"));
+    }
+
+    #[test]
+    fn does_not_upscale_smaller_parts() {
+        let g = build(
+            &[info_v(1920, 1080, true), info_v(1280, 720, true)],
+            &spec_1080(),
+        )
+        .unwrap();
+        assert!(!g.contains("scale="), "{g}");
+    }
+
+    #[test]
+    fn downscales_parts_larger_than_the_target() {
+        let g = build(&[info_v(3840, 2160, true)], &spec_1080()).unwrap();
+        assert!(g.contains("scale=1920:1080:force_original_aspect_ratio=decrease"));
+    }
+
+    #[test]
+    fn deinterlaces_interlaced_parts() {
+        let mut interlaced = info_v(1920, 1080, true);
+        interlaced.video.as_mut().unwrap().interlaced = true;
+        let g = build(&[info_v(1920, 1080, true), interlaced], &spec_1080()).unwrap();
+        assert!(g.contains("[1:v]yadif,"));
+        assert!(!g.contains("[0:v]yadif,"));
+    }
+
+    #[test]
+    fn keeps_three_channel_layout() {
+        let mut spec = spec_1080();
+        spec.audio = Some(AudioSpec {
+            channels: 3,
+            sample_rate: 48000,
+            bitrate_kbps: 192,
+        });
+        let g = build(&[info_v(1920, 1080, true)], &spec).unwrap();
+        assert!(g.contains("channel_layouts=3.0"));
     }
 
     #[test]

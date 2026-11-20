@@ -58,13 +58,14 @@ pub fn decide(infos: &[MediaInfo], enc: &Encoders) -> Result<Decision> {
     let videos: Vec<&VideoInfo> = infos.iter().filter_map(|i| i.video.as_ref()).collect();
 
     if videos.is_empty() {
+        let (audio, warnings) = audio_spec(infos);
         return Ok(Decision {
             spec: OutputSpec {
                 container: Container::M4a,
                 video: None,
-                audio: audio_spec(infos),
+                audio,
             },
-            warnings: Vec::new(),
+            warnings,
         });
     }
     if videos.len() != infos.len() {
@@ -112,6 +113,9 @@ pub fn decide(infos: &[MediaInfo], enc: &Encoders) -> Result<Decision> {
         None
     };
 
+    let (audio, audio_warnings) = audio_spec(infos);
+    warnings.extend(audio_warnings);
+
     Ok(Decision {
         spec: OutputSpec {
             container: Container::Mp4,
@@ -123,7 +127,7 @@ pub fn decide(infos: &[MediaInfo], enc: &Encoders) -> Result<Decision> {
                 crf,
                 fps,
             }),
-            audio: audio_spec(infos),
+            audio,
         },
         warnings,
     })
@@ -133,7 +137,7 @@ fn even(v: u32) -> u32 {
     v & !1
 }
 
-fn audio_spec(infos: &[MediaInfo]) -> Option<AudioSpec> {
+fn audio_spec(infos: &[MediaInfo]) -> (Option<AudioSpec>, Vec<String>) {
     let channels: Vec<u32> = infos
         .iter()
         .filter_map(|i| i.audio.as_ref())
@@ -141,15 +145,19 @@ fn audio_spec(infos: &[MediaInfo]) -> Option<AudioSpec> {
         .filter(|c| *c > 0)
         .collect();
     if channels.is_empty() {
-        return None;
+        return (None, Vec::new());
     }
+
+    let mut warnings = Vec::new();
     let first = channels[0];
     let mut ch = if channels.iter().all(|c| *c == first) {
         first
     } else {
+        warnings.push("audio channel layouts differ; mixing down to stereo".to_string());
         2
     };
     if ch > 6 {
+        warnings.push("more than 6 audio channels; mixing down to 5.1".to_string());
         ch = 6;
     }
     let bitrate_kbps = match ch {
@@ -158,11 +166,14 @@ fn audio_spec(infos: &[MediaInfo]) -> Option<AudioSpec> {
         6 => 384,
         n => (64 * n).min(512),
     };
-    Some(AudioSpec {
-        channels: ch,
-        sample_rate: 48000,
-        bitrate_kbps,
-    })
+    (
+        Some(AudioSpec {
+            channels: ch,
+            sample_rate: 48000,
+            bitrate_kbps,
+        }),
+        warnings,
+    )
 }
 
 #[cfg(test)]
@@ -252,6 +263,25 @@ mod tests {
         b.audio.as_mut().unwrap().channels = 6;
         let spec = decide(&[a, b], &enc_with_x265()).unwrap().spec;
         assert_eq!(spec.audio.unwrap().channels, 2);
+    }
+
+    #[test]
+    fn warns_on_channel_downmix() {
+        let mut a = vid(1280, 720, false, 8);
+        let mut b = vid(1280, 720, false, 8);
+        a.audio.as_mut().unwrap().channels = 1;
+        b.audio.as_mut().unwrap().channels = 6;
+        let d = decide(&[a, b], &enc_with_x265()).unwrap();
+        assert!(d.warnings.iter().any(|w| w.contains("stereo")));
+    }
+
+    #[test]
+    fn warns_on_more_than_six_channels() {
+        let mut m = vid(1280, 720, false, 8);
+        m.audio.as_mut().unwrap().channels = 8;
+        let d = decide(&[m], &enc_with_x265()).unwrap();
+        assert_eq!(d.spec.audio.unwrap().channels, 6);
+        assert!(d.warnings.iter().any(|w| w.contains("5.1")));
     }
 
     #[test]

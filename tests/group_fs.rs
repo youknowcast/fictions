@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use fictions::group::detect_group;
+use fictions::group::{detect_group, parent_dir};
 
 fn write(dir: &Path, name: &str, body: &[u8]) {
     std::fs::write(dir.join(name), body).unwrap();
@@ -70,4 +70,11 @@ fn hash_is_stable_across_runs() {
 
     assert_eq!(first, second);
     assert_eq!(first.len(), 8);
+}
+
+#[test]
+fn bare_file_name_has_dot_parent() {
+    use std::path::Path;
+    assert_eq!(parent_dir(Path::new("good.mp4")), Path::new("."));
+    assert_eq!(parent_dir(Path::new("dir/good.mp4")), Path::new("dir"));
 }
