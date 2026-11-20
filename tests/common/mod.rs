@@ -10,12 +10,17 @@ pub fn ffmpeg_ok() -> bool {
 }
 
 pub fn make_video(dir: &Path, name: &str, w: u32, h: u32, secs: f32) {
+    make_video_with(dir, name, w, h, secs, 440.0);
+}
+
+pub fn make_video_with(dir: &Path, name: &str, w: u32, h: u32, secs: f32, freq: f32) {
     let output = Command::new("ffmpeg")
         .args(["-hide_banner", "-v", "error", "-y", "-f", "lavfi", "-i"])
         .arg(format!("testsrc2=size={w}x{h}:rate=30:duration={secs}"))
         .args(["-f", "lavfi", "-i"])
-        .arg(format!("sine=frequency=440:duration={secs}"))
-        .args(["-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest"])
+        .arg(format!("sine=frequency={freq}:duration={secs}"))
+        .args(["-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest",
+         "-movflags", "+faststart"])
         .arg(dir.join(name))
         .output()
         .unwrap();

@@ -15,6 +15,7 @@ pub struct Request<'a> {
     pub progress: bool,
     pub interlaced: bool,
     pub duration: Option<f64>,
+    pub filtergraph: Option<&'a str>,
 }
 
 pub struct EncodeOutcome {
@@ -41,13 +42,29 @@ pub fn build_args(req: &Request) -> Vec<String> {
         args.push(input.to_string_lossy().into_owned());
     }
 
-    if req.spec.video.is_some() {
-        args.push("-map".into());
-        args.push("0:V:0?".into());
-    }
-    if req.spec.audio.is_some() {
-        args.push("-map".into());
-        args.push("0:a:0?".into());
+    match req.filtergraph {
+        Some(graph) => {
+            args.push("-filter_complex".into());
+            args.push(graph.to_string());
+            if req.spec.video.is_some() {
+                args.push("-map".into());
+                args.push("[outv]".into());
+            }
+            if req.spec.audio.is_some() {
+                args.push("-map".into());
+                args.push("[outa]".into());
+            }
+        }
+        None => {
+            if req.spec.video.is_some() {
+                args.push("-map".into());
+                args.push("0:V:0?".into());
+            }
+            if req.spec.audio.is_some() {
+                args.push("-map".into());
+                args.push("0:a:0?".into());
+            }
+        }
     }
     args.push("-map_metadata".into());
     args.push("-1".into());
@@ -57,12 +74,14 @@ pub fn build_args(req: &Request) -> Vec<String> {
     args.push("-sn".into());
 
     if let Some(video) = &req.spec.video {
-        let mut filter = "scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1".to_string();
-        if req.interlaced {
-            filter.push_str(",yadif");
+        if req.filtergraph.is_none() {
+            let mut filter = "scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1".to_string();
+            if req.interlaced {
+                filter.push_str(",yadif");
+            }
+            args.push("-vf".into());
+            args.push(filter);
         }
-        args.push("-vf".into());
-        args.push(filter);
 
         let encoder = match video.codec {
             VideoCodec::H264 => "libx264",
@@ -197,6 +216,7 @@ mod tests {
             progress: false,
             interlaced: false,
             duration: None,
+            filtergraph: None,
         }
     }
 
@@ -299,6 +319,22 @@ mod tests {
         req.progress = true;
         let args = build_args(&req);
         assert!(args.windows(2).any(|w| w[0] == "-progress" && w[1] == "pipe:1"));
+    }
+
+    #[test]
+    fn filtergraph_mode_maps_graph_outputs() {
+        let inputs = vec![PathBuf::from("a.mp4"), PathBuf::from("b.mp4")];
+        let output = PathBuf::from("out.mp4");
+        let spec = spec_1080();
+        let mut req = req_single(&spec, &inputs, &output);
+        req.filtergraph = Some("[0:v]null[outv];[0:a]anull[outa]");
+
+        let args = build_args(&req);
+
+        assert!(args.windows(2).any(|w| w[0] == "-filter_complex"));
+        assert!(args.windows(2).any(|w| w[0] == "-map" && w[1] == "[outv]"));
+        assert!(args.windows(2).any(|w| w[0] == "-map" && w[1] == "[outa]"));
+        assert!(!args.contains(&"-vf".to_string()));
     }
 
     #[test]

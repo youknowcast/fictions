@@ -90,6 +90,11 @@ pub fn run(input: &Path, opts: &Options) -> anyhow::Result<Outcome> {
     }
 
     let staged = temp.path().join(format!("staged.{ext}"));
+    let graph = if group.parts.len() > 1 {
+        Some(crate::filtergraph::build(&infos, &spec)?)
+    } else {
+        None
+    };
     let outcome = encode::run(
         &ff,
         &sandbox,
@@ -103,6 +108,7 @@ pub fn run(input: &Path, opts: &Options) -> anyhow::Result<Outcome> {
                 .filter_map(|i| i.video.as_ref())
                 .any(|v| v.interlaced),
             duration: Some(expected_duration),
+            filtergraph: graph.as_deref(),
         },
     )?;
 
