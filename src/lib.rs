@@ -7,3 +7,4 @@ pub mod naming;
 pub mod probe;
 pub mod sandbox;
 pub mod spec;
+pub mod verify;

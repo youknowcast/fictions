@@ -153,6 +153,35 @@ fn parse_audio(stream: &Value) -> anyhow::Result<AudioInfo> {
     })
 }
 
+pub fn probe_file(
+    ff: &crate::ffmpeg::Ffmpeg,
+    sb: &crate::sandbox::Sandbox,
+    path: &std::path::Path,
+) -> anyhow::Result<MediaInfo> {
+    let output = sb
+        .wrap(&ff.ffprobe)
+        .args([
+            "-v",
+            "error",
+            "-print_format",
+            "json",
+            "-show_format",
+            "-show_streams",
+        ])
+        .arg(path)
+        .output()
+        .with_context(|| format!("cannot run {}", ff.ffprobe.display()))?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "ffprobe failed for {}: {}",
+            path.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    parse_probe_json(&text).with_context(|| format!("cannot read media info of {}", path.display()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
