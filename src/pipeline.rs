@@ -1,0 +1,172 @@
+use std::io::IsTerminal;
+use std::path::{Path, PathBuf};
+
+use anyhow::{bail, Context};
+
+use crate::encode::{self, Request};
+use crate::ffmpeg;
+use crate::group::{self, Group};
+use crate::naming;
+use crate::probe::{self, MediaInfo};
+use crate::sandbox;
+use crate::spec::{self, Container, OutputSpec};
+use crate::verify;
+
+#[derive(Debug, Clone, Default)]
+pub struct Options {
+    pub force: bool,
+    pub no_sandbox: bool,
+    pub no_group: bool,
+    pub dry_run: bool,
+    pub quiet: bool,
+}
+
+#[derive(Debug)]
+pub enum Outcome {
+    Written(PathBuf),
+    Skipped(PathBuf),
+    Suspect(PathBuf, String),
+    DryRun(String),
+}
+
+pub fn warning_line(msg: &str, quiet: bool) -> Option<String> {
+    (!quiet).then(|| msg.to_string())
+}
+
+pub fn run(input: &Path, opts: &Options) -> anyhow::Result<Outcome> {
+    let group = if opts.no_group {
+        group::single(input)?
+    } else {
+        group::detect_group(input)?
+    };
+    for dropped in &group.dropped {
+        if let Some(line) = warning_line(
+            &format!("skipping duplicate part: {}", dropped.display()),
+            opts.quiet,
+        ) {
+            eprintln!("{line}");
+        }
+    }
+
+    let ff = ffmpeg::discover()?;
+    let caps = ff.capabilities()?;
+
+    let dir = input.parent().unwrap_or_else(|| Path::new("."));
+    let temp = tempfile::Builder::new()
+        .prefix(".fictions-tmp-")
+        .tempdir_in(dir)
+        .with_context(|| format!("cannot create a temporary directory in {}", dir.display()))?;
+
+    let readable: Vec<PathBuf> = group.parts.iter().map(|p| p.path.clone()).collect();
+    let sandbox = sandbox::prepare(&readable, temp.path(), opts.no_sandbox)?;
+
+    let mut infos: Vec<MediaInfo> = Vec::new();
+    for part in &group.parts {
+        infos.push(probe::probe_file(&ff, &sandbox, &part.path)?);
+    }
+
+    let decision = spec::decide(&infos, &caps.encoders())?;
+    for warning in &decision.warnings {
+        if let Some(line) = warning_line(warning, opts.quiet) {
+            eprintln!("{line}");
+        }
+    }
+    let spec = decision.spec;
+
+    let ext = match spec.container {
+        Container::Mp4 => "mp4",
+        Container::M4a => "m4a",
+    };
+    let output = dir.join(naming::output_filename(&group.base, &group.hash8, ext));
+
+    if output.exists() && !opts.force {
+        return Ok(Outcome::Skipped(output));
+    }
+
+    let expected_duration = total_duration(&infos)?;
+
+    if opts.dry_run {
+        return Ok(Outcome::DryRun(describe(&group, &spec, &output, expected_duration)));
+    }
+
+    let staged = temp.path().join(format!("staged.{ext}"));
+    let outcome = encode::run(
+        &ff,
+        &sandbox,
+        &Request {
+            inputs: &readable,
+            spec: &spec,
+            output: &staged,
+            progress: std::io::stderr().is_terminal(),
+            interlaced: infos
+                .iter()
+                .filter_map(|i| i.video.as_ref())
+                .any(|v| v.interlaced),
+            duration: Some(expected_duration),
+        },
+    )?;
+
+    let suspect = !outcome.stderr.trim().is_empty();
+
+    if let Err(err) = verify::verify_output(&ff, &sandbox, &staged, &spec, expected_duration) {
+        let kept = temp.keep();
+        bail!(
+            "{err}\nthe incomplete output was kept at {}",
+            kept.join(format!("staged.{ext}")).display()
+        );
+    }
+
+    std::fs::rename(&staged, &output)
+        .with_context(|| format!("cannot move output to {}", output.display()))?;
+    drop(temp);
+
+    if suspect {
+        return Ok(Outcome::Suspect(output, outcome.stderr.trim().to_string()));
+    }
+    Ok(Outcome::Written(output))
+}
+
+fn total_duration(infos: &[MediaInfo]) -> anyhow::Result<f64> {
+    let mut total = 0.0;
+    for info in infos {
+        match info.duration {
+            Some(d) => total += d,
+            None => bail!("cannot read the duration of an input"),
+        }
+    }
+    Ok(total)
+}
+
+fn describe(group: &Group, spec: &OutputSpec, output: &Path, duration: f64) -> String {
+    let video = match &spec.video {
+        Some(v) => format!(
+            "{:?} {}x{} crf{}",
+            v.codec, v.width, v.height, v.crf
+        ),
+        None => "audio only".to_string(),
+    };
+    let audio = match &spec.audio {
+        Some(a) => format!("{}ch {}k", a.channels, a.bitrate_kbps),
+        None => "no audio".to_string(),
+    };
+    format!(
+        "parts: {} ({:.2}s total)\nvideo: {video}\naudio: {audio}\noutput: {}",
+        group.parts.len(),
+        duration,
+        output.display()
+    )
+}
+
+pub fn output_path(outcome: &Outcome) -> Option<&Path> {
+    match outcome {
+        Outcome::Written(p) | Outcome::Skipped(p) | Outcome::Suspect(p, _) => Some(p),
+        Outcome::DryRun(_) => None,
+    }
+}
+
+pub fn exit_code(outcome: &Outcome) -> u8 {
+    match outcome {
+        Outcome::Suspect(_, _) => 1,
+        _ => 0,
+    }
+}

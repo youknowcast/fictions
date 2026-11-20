@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::{anyhow, bail};
+use anyhow::bail;
 
 #[derive(Debug, Clone)]
 pub enum Kind {

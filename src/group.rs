@@ -28,6 +28,38 @@ pub fn strip_index(stem: &str) -> Option<(&str, u32)> {
     Some((head, body.parse().ok()?))
 }
 
+pub fn single(input: &Path) -> anyhow::Result<Group> {
+    if !input.is_file() {
+        return Err(anyhow!("input is not a file: {}", input.display()));
+    }
+    let bytes = std::fs::read(input)?;
+    let digest = *blake3::hash(&bytes).as_bytes();
+    let base = input
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| anyhow!("input has no usable file name: {}", input.display()))?
+        .to_string();
+    Ok(Group {
+        base,
+        hash8: hash8_of([digest]),
+        parts: vec![Part {
+            path: input.to_path_buf(),
+            order: None,
+            digest,
+        }],
+        dropped: Vec::new(),
+    })
+}
+
+fn hash8_of(digests: impl IntoIterator<Item = [u8; 32]>) -> String {
+    let mut hasher = blake3::Hasher::new();
+    for digest in digests {
+        hasher.update(digest.as_slice());
+    }
+    let hex = hasher.finalize().to_hex();
+    hex[..8].to_string()
+}
+
 pub fn detect_group(input: &Path) -> anyhow::Result<Group> {
     if !input.is_file() {
         return Err(anyhow!("input is not a file: {}", input.display()));
@@ -99,12 +131,7 @@ pub fn detect_group(input: &Path) -> anyhow::Result<Group> {
         return Err(anyhow!("no parts found for {}", input.display()));
     }
 
-    let mut hasher = blake3::Hasher::new();
-    for part in &parts {
-        hasher.update(part.digest.as_slice());
-    }
-    let hex = hasher.finalize().to_hex();
-    let hash8 = hex[..8].to_string();
+    let hash8 = hash8_of(parts.iter().map(|p| p.digest));
 
     Ok(Group {
         base,

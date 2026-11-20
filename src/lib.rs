@@ -4,6 +4,7 @@ pub mod ffmpeg;
 pub mod filtergraph;
 pub mod group;
 pub mod naming;
+pub mod pipeline;
 pub mod probe;
 pub mod sandbox;
 pub mod spec;

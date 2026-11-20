@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
 
-use crate::probe::{AudioInfo, MediaInfo, VideoInfo};
+use crate::probe::{MediaInfo, VideoInfo};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VideoCodec {
@@ -168,6 +168,7 @@ fn audio_spec(infos: &[MediaInfo]) -> Option<AudioSpec> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::probe::AudioInfo;
 
     fn vid(w: u32, h: u32, hdr: bool, depth: u8) -> MediaInfo {
         MediaInfo {
