@@ -1,6 +1,7 @@
 pub mod cli;
 pub mod encode;
 pub mod ffmpeg;
+pub mod filtergraph;
 pub mod group;
 pub mod naming;
 pub mod probe;
