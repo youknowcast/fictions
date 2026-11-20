@@ -1,0 +1,11 @@
+{
+  "streams": [
+    {
+      "codec_type": "audio",
+      "channels": 2,
+      "sample_rate": "44100",
+      "disposition": { "attached_pic": 0 }
+    }
+  ],
+  "format": { "duration": "180.000000" }
+}
