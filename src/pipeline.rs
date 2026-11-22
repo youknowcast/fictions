@@ -62,7 +62,13 @@ pub fn run(input: &Path, opts: &Options) -> anyhow::Result<Outcome> {
         .iter()
         .map(|p| std::fs::canonicalize(&p.path).unwrap_or_else(|_| p.path.clone()))
         .collect();
-    let sandbox = sandbox::prepare(&readable, temp.path(), opts.no_sandbox)?;
+    let sandbox = sandbox::prepare(
+        &readable,
+        temp.path(),
+        &[ff.ffmpeg.clone(), ff.ffprobe.clone()],
+        opts.no_sandbox,
+    )?;
+    sandbox.check_ffprobe(&ff.ffprobe)?;
 
     let mut infos: Vec<MediaInfo> = Vec::new();
     for path in &readable {
