@@ -8,6 +8,15 @@ pub enum VideoCodec {
     Hevc,
 }
 
+impl VideoCodec {
+    pub fn label(self) -> &'static str {
+        match self {
+            VideoCodec::H264 => "H.264",
+            VideoCodec::Hevc => "HEVC",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Container {
     Mp4,

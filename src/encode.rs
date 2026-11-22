@@ -16,6 +16,7 @@ pub struct Request<'a> {
     pub interlaced: bool,
     pub duration: Option<f64>,
     pub filtergraph: Option<&'a str>,
+    pub video_max_kbps: Option<u32>,
 }
 
 pub struct EncodeOutcome {
@@ -93,6 +94,12 @@ pub fn build_args(req: &Request) -> Vec<String> {
         args.push(video.crf.to_string());
         args.push("-preset".into());
         args.push("medium".into());
+        if let Some(max_kbps) = req.video_max_kbps {
+            args.push("-maxrate".into());
+            args.push(format!("{max_kbps}k"));
+            args.push("-bufsize".into());
+            args.push(format!("{}k", crate::report::bufsize_kbps(max_kbps)));
+        }
         if video.codec == VideoCodec::H264 {
             args.push("-profile:v".into());
             args.push("high".into());
@@ -239,6 +246,7 @@ mod tests {
             interlaced: false,
             duration: None,
             filtergraph: None,
+            video_max_kbps: None,
         }
     }
 
@@ -277,6 +285,31 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|w| w[0] == "-movflags" && w[1] == "+faststart"));
+    }
+
+    #[test]
+    fn video_cap_adds_single_pass_vbv_limits() {
+        let inputs = vec![PathBuf::from("in.mp4")];
+        let output = PathBuf::from("out.mp4");
+        let spec = spec_1080();
+        let mut req = req_single(&spec, &inputs, &output);
+        req.video_max_kbps = Some(2600);
+
+        let args = build_args(&req);
+
+        assert!(args
+            .windows(2)
+            .any(|w| w[0] == "-maxrate" && w[1] == "2600k"));
+        assert!(args
+            .windows(2)
+            .any(|w| w[0] == "-bufsize" && w[1] == "5200k"));
+    }
+
+    #[test]
+    fn no_cap_means_no_vbv_limits() {
+        let args = args_for(&spec_1080());
+        assert!(!args.contains(&"-maxrate".to_string()));
+        assert!(!args.contains(&"-bufsize".to_string()));
     }
 
     #[test]

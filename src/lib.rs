@@ -6,6 +6,7 @@ pub mod group;
 pub mod naming;
 pub mod pipeline;
 pub mod probe;
+pub mod report;
 pub mod sandbox;
 pub mod spec;
 pub mod verify;

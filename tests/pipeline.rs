@@ -193,6 +193,29 @@ fn truncated_input_is_suspect() {
 }
 
 #[test]
+fn output_stays_within_the_input_size() {
+    if !common::ffmpeg_ok() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    common::make_video(dir.path(), "grow.mp4", 640, 360, 3.0);
+    let input_bytes = std::fs::metadata(dir.path().join("grow.mp4"))
+        .unwrap()
+        .len();
+
+    let outcome = pipeline::run(&dir.path().join("grow.mp4"), &opts()).unwrap();
+    let Outcome::Written(path) = outcome else {
+        panic!("expected Written, got {outcome:?}");
+    };
+
+    let output_bytes = std::fs::metadata(&path).unwrap().len();
+    assert!(
+        output_bytes <= input_bytes,
+        "output was {output_bytes} bytes for a {input_bytes} byte input"
+    );
+}
+
+#[test]
 fn dry_run_reports_even_when_output_exists() {
     if !common::ffmpeg_ok() {
         return;

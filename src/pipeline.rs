@@ -8,6 +8,7 @@ use crate::ffmpeg;
 use crate::group::{self, Group};
 use crate::naming;
 use crate::probe::{self, MediaInfo};
+use crate::report;
 use crate::sandbox;
 use crate::spec::{self, Container, OutputSpec};
 use crate::verify;
@@ -90,9 +91,19 @@ pub fn run(input: &Path, opts: &Options) -> anyhow::Result<Outcome> {
     let output = dir.join(naming::output_filename(&group.base, &group.hash8, ext));
 
     let expected_duration = total_duration(&infos)?;
+    let input_bytes = input_size(&group);
+    let cap = if spec.video.is_some() {
+        report::plan_cap(
+            input_bytes,
+            expected_duration,
+            spec.audio.as_ref().map(|audio| audio.bitrate_kbps),
+        )
+    } else {
+        None
+    };
 
     if opts.dry_run {
-        let text = describe(&group, &spec, &output, expected_duration);
+        let text = describe(&group, &spec, &output, expected_duration, input_bytes, cap);
         return Ok(Outcome::DryRun(output, text));
     }
 
@@ -120,6 +131,7 @@ pub fn run(input: &Path, opts: &Options) -> anyhow::Result<Outcome> {
                 .any(|v| v.interlaced),
             duration: Some(expected_duration),
             filtergraph: graph.as_deref(),
+            video_max_kbps: cap.map(|cap| cap.video_kbps),
         },
     );
 
@@ -139,15 +151,19 @@ pub fn run(input: &Path, opts: &Options) -> anyhow::Result<Outcome> {
     }
     drop(temp);
 
-    let input_bytes: u64 = group
-        .parts
-        .iter()
-        .filter_map(|p| std::fs::metadata(&p.path).ok())
-        .map(|m| m.len())
-        .sum();
     let output_bytes = std::fs::metadata(&output).map(|m| m.len()).unwrap_or(0);
-    if let Some(line) = growth_warning(input_bytes, output_bytes, opts.quiet) {
-        eprintln!("{line}");
+    if !opts.quiet {
+        let summary = report::Summary {
+            output: &output,
+            output_bytes,
+            input_bytes,
+            duration: expected_duration,
+            spec: &spec,
+            cap,
+        };
+        for line in summary.lines() {
+            eprintln!("{line}");
+        }
     }
 
     if suspect {
@@ -156,14 +172,13 @@ pub fn run(input: &Path, opts: &Options) -> anyhow::Result<Outcome> {
     Ok(Outcome::Written(output))
 }
 
-pub fn growth_warning(input_bytes: u64, output_bytes: u64, quiet: bool) -> Option<String> {
-    if quiet || output_bytes <= input_bytes {
-        return None;
-    }
-    Some(format!(
-        "warning: the output is larger than the input ({} -> {} bytes)",
-        input_bytes, output_bytes
-    ))
+fn input_size(group: &Group) -> u64 {
+    group
+        .parts
+        .iter()
+        .filter_map(|p| std::fs::metadata(&p.path).ok())
+        .map(|m| m.len())
+        .sum()
 }
 
 fn keep_temp(temp: tempfile::TempDir, staged: &Path, err: anyhow::Error) -> anyhow::Error {
@@ -186,9 +201,22 @@ fn total_duration(infos: &[MediaInfo]) -> anyhow::Result<f64> {
     Ok(total)
 }
 
-fn describe(group: &Group, spec: &OutputSpec, output: &Path, duration: f64) -> String {
+fn describe(
+    group: &Group,
+    spec: &OutputSpec,
+    output: &Path,
+    duration: f64,
+    input_bytes: u64,
+    cap: Option<report::Cap>,
+) -> String {
     let video = match &spec.video {
-        Some(v) => format!("{:?} {}x{} crf{}", v.codec, v.width, v.height, v.crf),
+        Some(v) => {
+            let mut line = format!("{} {}x{} CRF {}", v.codec.label(), v.width, v.height, v.crf);
+            if let Some(cap) = cap {
+                line.push_str(&format!(", max {} kb/s", cap.video_kbps));
+            }
+            line
+        }
         None => "audio only".to_string(),
     };
     let audio = match &spec.audio {
@@ -196,9 +224,11 @@ fn describe(group: &Group, spec: &OutputSpec, output: &Path, duration: f64) -> S
         None => "no audio".to_string(),
     };
     format!(
-        "parts: {} ({:.2}s total)\nvideo: {video}\naudio: {audio}\noutput: {}",
+        "parts: {} ({:.2}s total)\nvideo: {video}\naudio: {audio}\ninput: {} total, {} kb/s\noutput: {}",
         group.parts.len(),
         duration,
+        report::format_bytes(input_bytes),
+        report::bitrate_kbps(input_bytes, duration),
         output.display()
     )
 }
@@ -222,6 +252,7 @@ pub fn exit_code(outcome: &Outcome) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::spec::{AudioSpec, VideoCodec, VideoSpec};
 
     #[test]
     fn quiet_suppresses_warnings() {
@@ -230,10 +261,45 @@ mod tests {
     }
 
     #[test]
-    fn warns_when_output_grows() {
-        assert!(growth_warning(100, 120, false).is_some());
-        assert!(growth_warning(120, 100, false).is_none());
-        assert!(growth_warning(100, 120, true).is_none());
+    fn dry_run_text_shows_the_planned_cap() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("clip.mp4");
+        std::fs::write(&path, vec![0u8; 1_000_000]).unwrap();
+        let group = Group {
+            base: "clip".to_string(),
+            hash8: "1234abcd".to_string(),
+            parts: vec![crate::group::Part {
+                path: path.clone(),
+                order: None,
+                digest: [0; 32],
+            }],
+            dropped: Vec::new(),
+        };
+        let spec = OutputSpec {
+            container: Container::Mp4,
+            video: Some(VideoSpec {
+                codec: VideoCodec::H264,
+                pix_fmt: "yuv420p",
+                width: 640,
+                height: 360,
+                crf: 21,
+                fps: None,
+            }),
+            audio: Some(AudioSpec {
+                channels: 2,
+                sample_rate: 48000,
+                bitrate_kbps: 160,
+            }),
+        };
+        let cap = report::plan_cap(1_000_000, 10.0, Some(160)).unwrap();
+
+        let text = describe(&group, &spec, &path, 10.0, 1_000_000, Some(cap));
+
+        assert!(
+            text.contains(&format!("max {} kb/s", cap.video_kbps)),
+            "{text}"
+        );
+        assert!(text.contains("input: 1.0 MB total, 800 kb/s"), "{text}");
     }
 
     #[test]
