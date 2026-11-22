@@ -1,5 +1,9 @@
+use std::path::Path;
+
 use anyhow::{anyhow, Context};
 use serde_json::Value;
+
+use crate::sandbox::{describe_status, Sandbox};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MediaInfo {
@@ -155,31 +159,55 @@ fn parse_audio(stream: &Value) -> anyhow::Result<AudioInfo> {
 
 pub fn probe_file(
     ff: &crate::ffmpeg::Ffmpeg,
-    sb: &crate::sandbox::Sandbox,
-    path: &std::path::Path,
+    sb: &Sandbox,
+    path: &Path,
 ) -> anyhow::Result<MediaInfo> {
+    let args = [
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_format",
+        "-show_streams",
+    ];
     let output = sb
         .wrap(&ff.ffprobe)
-        .args([
-            "-v",
-            "error",
-            "-print_format",
-            "json",
-            "-show_format",
-            "-show_streams",
-        ])
+        .args(args)
         .arg(path)
         .output()
         .with_context(|| format!("cannot run {}", ff.ffprobe.display()))?;
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = stderr.trim();
+        let detail = if stderr.is_empty() {
+            "no stderr".to_string()
+        } else {
+            stderr.to_string()
+        };
         anyhow::bail!(
-            "ffprobe failed for {}: {}",
+            "ffprobe failed for {} ({}): {detail}\nargv: {}",
             path.display(),
-            String::from_utf8_lossy(&output.stderr).trim()
+            describe_status(&output.status),
+            argv_line(&ff.ffprobe, &args, path)
         );
     }
     let text = String::from_utf8_lossy(&output.stdout);
     parse_probe_json(&text).with_context(|| format!("cannot read media info of {}", path.display()))
+}
+
+fn argv_line(program: &Path, args: &[&str], path: &Path) -> String {
+    std::iter::once(program.to_string_lossy().into_owned())
+        .chain(args.iter().map(|arg| (*arg).to_string()))
+        .chain(std::iter::once(path.to_string_lossy().into_owned()))
+        .map(|arg| {
+            if arg.is_empty() || arg.contains(char::is_whitespace) {
+                format!("{arg:?}")
+            } else {
+                arg
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[cfg(test)]
@@ -224,5 +252,31 @@ mod tests {
     #[test]
     fn zero_byte_json_fails() {
         assert!(parse_probe_json("").is_err());
+    }
+
+    #[test]
+    fn argv_quotes_paths_with_spaces() {
+        let line = argv_line(
+            Path::new("/opt/ffprobe"),
+            &["-v"],
+            Path::new("/tmp/a b.mp4"),
+        );
+        assert_eq!(line, "/opt/ffprobe -v \"/tmp/a b.mp4\"");
+    }
+
+    #[test]
+    fn failure_message_reports_status_and_argv() {
+        let ff = crate::ffmpeg::Ffmpeg {
+            ffmpeg: std::path::PathBuf::from("/bin/false"),
+            ffprobe: std::path::PathBuf::from("/bin/false"),
+        };
+        let sb = crate::sandbox::prepare(&[], Path::new("/tmp"), &[], true).unwrap();
+
+        let err = probe_file(&ff, &sb, Path::new("/tmp/missing.mp4")).unwrap_err();
+        let message = err.to_string();
+
+        assert!(message.contains("exit code 1"), "{message}");
+        assert!(message.contains("argv: /bin/false -v error"), "{message}");
+        assert!(message.contains("no stderr"), "{message}");
     }
 }
